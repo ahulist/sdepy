@@ -1,0 +1,63 @@
+#define _USE_MATH_DEFINES
+#include <math.h>
+#include <curand_kernel.h>
+
+const int threads_total = 4;
+__device__ curandState_t* curand_states[threads_total];
+
+    __constant__ int periods = 1;
+    __constant__ int steps_per_period = 2000;
+    __constant__ int steps_per_kernel_call = 200;
+    __constant__ int number_of_threads = 4;
+    __constant__ int afterstep_every = 1;
+
+    __constant__ float dt = 0.0020949113096826;
+
+__shared__ float data [4][12];
+
+
+__global__ void initkernel(int seed)
+{
+    int idx = threadIdx.x + blockIdx.x * blockDim.x;
+    curandState_t* s = new curandState_t;
+    curand_init(seed, idx, 0, s);
+    curand_states[idx] = s;
+}
+
+__device__ void calc_avg(float &current_avg, float new_value, int current_step)
+{
+    current_avg += (new_value - current_avg) / (current_step % steps_per_period + 1);
+}
+
+extern "C" __global__ void prepare_simulation(float *summary, float* output)
+{
+    int idx = threadIdx.x + threadIdx.y * 2;
+    
+    
+    
+    data[idx][0] = 0.0f;  // current step
+    
+    
+        float position = data[idx][1] = 0.0; // position
+        
+        
+            data[idx][2] = 0.0f; // avg_period_position
+            
+            
+            data[idx][3] = 0.0f; // avg_periods_position
+            
+        float velocity = data[idx][4] = 1.0; // velocity
+        
+        
+            data[idx][5] = 0.0f; // avg_period_velocity
+            
+            
+            data[idx][6] = 0.0f; // avg_periods_velocity
+            
+        float t = data[idx][7] = 0.0; // t
+        
+        
+    
+    data[idx][8] = -0.100694794079146*velocity + 0.632684050667565*sinf(6.28318530717959*position) + 0.415366025576478*cosf(3.749*t) + 0.100694794079146; // lhs
+    
+}
