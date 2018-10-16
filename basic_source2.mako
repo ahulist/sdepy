@@ -64,9 +64,9 @@ extern "C" __global__ void prepare_simulation(float *summary, float* output)
         % endif
     % endfor
     
-    data[idx][${free_index}] = ${sde.rhs_string}; // lhs
+    data[idx][${free_index}] = ${sde.rhs_string[-1]}; // rhs
     <%
-    sde.lookup['lhs'] = free_index
+    sde.lookup['rhs'] = free_index
     free_index += 1
     %>
 }
@@ -75,7 +75,7 @@ __device__ void afterstep(
     % for row in sde.row_iterator('type', ['dependent variable']):
         float ${row.Index},
     % endfor
-    float lhs
+    float rhs
 )
 {
     
@@ -94,40 +94,31 @@ extern "C" __global__ void continue_simulation(float *summary, float* output)
             float avg_periods_${row.Index} = data[idx][${sde.lookup['avg_periods_'+str(row.Index)]}];
         % endif
     % endfor
-    float lhs = data[idx][${sde.lookup['lhs']}];
-    float lhs_next;
+    float rhs = data[idx][${sde.lookup['rhs']}];
+    float rhs_next;
     
     <% dependent_vars = len(list(sde.row_iterator('type', 'dependent variable'))) %>
 
     for (int i = 0; i < steps_per_kernel_call; i++) {
-        velocity_next = velocity + lhs * dt;
-        position_next = position + velocity * dt;
-        // rand_val = curand_uniform(curand_states[idx]);
-        lhs_next = ${sde.rhs_string};
-
-        t += dt;
-
-        position = position_next;
-        velocity = velocity_next;
-        lhs = lhs_next;
-        
         // iterative mean https://stackoverflow.com/a/1934266/1185254
-        calc_avg(avg_period_position, position, current_step);
+        calc_avg(avg_period_position, position, current_step);  <%doc>TODO: generowac!</%doc>
         calc_avg(avg_period_velocity, velocity, current_step);
         
-        if(current_step % steps_per_period == 0){
-            calc_avg(avg_periods_position, avg_period_position, current_step/steps_per_period);
-            calc_avg(avg_periods_velocity, avg_period_velocity, current_step/steps_per_period);
-            avg_period_position = 0.0f;
-            avg_period_velocity = 0.0f;
+        if(current_step % (steps_per_period-1) == 0){
+        	% for row in sde.row_iterator('type', 'dependent variable'):
+        		calc_avg(avg_periods_${row.Index}, avg_period_${row.Index}, current_step/steps_per_period);
+        		avg_period_${row.Index} = 0.0f;
+        	% endfor
         }
+        
+        <%include file="euler.mako"/>
         
         if(current_step % ${sde.settings['simulation']['afterstep_every']} == 0){
             afterstep(
             % for row in sde.row_iterator('type', ['dependent variable']):
                 ${row.Index}_next,
             % endfor
-            lhs_next
+            rhs_next
             );
         }
         
@@ -142,7 +133,7 @@ extern "C" __global__ void continue_simulation(float *summary, float* output)
             data[idx][${sde.lookup['avg_periods_'+str(row.Index)]}] = avg_periods_${row.Index};
         % endif
     % endfor
-    data[idx][${sde.lookup['lhs']}] = lhs;
+    data[idx][${sde.lookup['rhs']}] = rhs;
 }
 
 extern "C" __global__ void end_simulation(float *summary, float* output)
