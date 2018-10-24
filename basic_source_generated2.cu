@@ -6,12 +6,12 @@ const int threads_total = 4;
 __device__ curandState_t* curand_states[threads_total];
 
 __constant__ int steps_per_kernel_call = 200;
-__constant__ int steps_per_period = 800;
-__constant__ int periods = 1000;
+__constant__ int steps_per_period = 2000;
+__constant__ int periods = 1;
 __constant__ int number_of_threads = 4;
 __constant__ int afterstep_every = 1;
 
-__constant__ float dt = 0.0020943951023931952;
+__constant__ float dt = 0.0020949113096826;
 
 __shared__ float data[4][12];
 
@@ -36,14 +36,15 @@ extern "C" __global__ void prepare_simulation(float* summary, float* output) {
   float position = data[idx][1] = 0.0;  // position
   data[idx][2] = 0.0f;                  // avg_period_position
   data[idx][3] = 0.0f;                  // avg_periods_position
-  float velocity = data[idx][4] = 0.0;  // velocity
+  float velocity = data[idx][4] = 1.0;  // velocity
   data[idx][5] = 0.0f;                  // avg_period_velocity
   data[idx][6] = 0.0f;                  // avg_periods_velocity
   float t = data[idx][7] = 0.0;         // t
 
   data[idx][8] =
-      -10.0 * velocity - 62.8318530717959 * cosf(6.28318530717959 * position) +
-      85.5 * cosf(12.38 * t) + 5.0;  // rhs
+      -0.100694794079146 * velocity +
+      0.201389588158292 * M_PI * sinf(2 * M_PI * position) +
+      0.415366025576478 * cosf(3.749 * t) + 0.100694794079146;  // rhs
 
 }
 
@@ -83,9 +84,9 @@ extern "C" __global__ void continue_simulation(float* summary, float* output) {
 
     position_next = position + velocity * dt;
     velocity_next = velocity + rhs * dt;
-    rhs_next = -10.0 * velocity -
-               62.8318530717959 * cosf(6.28318530717959 * position) +
-               85.5 * cosf(12.38 * t) + 5.0;
+    rhs_next = -0.100694794079146 * velocity +
+               0.201389588158292 * M_PI * sinf(2 * M_PI * position) +
+               0.415366025576478 * cosf(3.749 * t) + 0.100694794079146;
 
     t += dt;
 
