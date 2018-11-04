@@ -25,7 +25,7 @@ __global__ void initkernel(int seed)
     curand_states[idx] = s;
 }
 
-__device__ void calc_avg(float &current_avg, float new_value, int current_step)
+__device__ __inline__ void calc_avg(float &current_avg, float new_value, int current_step)
 {
     current_avg += (new_value - current_avg) / (current_step % steps_per_period + 1);
 }
@@ -100,9 +100,13 @@ extern "C" __global__ void continue_simulation(float *summary, float* output)
     <% dependent_vars = len(list(sde.row_iterator('type', 'dependent variable'))) %>
 
     for (int i = 0; i < steps_per_kernel_call; i++) {
+        /**
+         * Averaging
+         */
         // iterative mean https://stackoverflow.com/a/1934266/1185254
-        calc_avg(avg_period_position, position, current_step);  <%doc>TODO: generowac!</%doc>
-        calc_avg(avg_period_velocity, velocity, current_step);
+        % for row in sde.row_iterator('type', 'dependent variable'):
+            calc_avg(avg_period_${row.Index}, ${row.Index}, current_step);
+        % endfor
         
         if(current_step % (steps_per_period-1) == 0){
         	% for row in sde.row_iterator('type', 'dependent variable'):
@@ -111,8 +115,14 @@ extern "C" __global__ void continue_simulation(float *summary, float* output)
         	% endfor
         }
         
+        /**
+    	 * Integration
+    	 */
         <%include file="euler.mako"/>
         
+        /**
+    	 * Afterstep
+    	 */
         if(current_step % ${sde.settings['simulation']['afterstep_every']} == 0){
             afterstep(
             % for row in sde.row_iterator('type', ['dependent variable']):
