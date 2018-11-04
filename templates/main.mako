@@ -2,10 +2,10 @@
 #include <math.h>
 #include <curand_kernel.h>
 
-const int threads_total = ${sde.settings['simulation']['number_of_threads']};
+const int threads_total = ${sde.settings['constants']['number_of_threads']};
 __device__ curandState_t* curand_states[threads_total];
 
-% for sim_name, sim_value in sde.settings['simulation'].items():
+% for sim_name, sim_value in sde.settings['constants'].items():
     __constant__ ${'float' if isinstance(sim_value, float) else 'int'} ${sim_name} = ${sim_value};
 % endfor
 
@@ -24,6 +24,35 @@ __global__ void initkernel(int seed)
     curand_init(seed, idx, 0, s);
     curand_states[idx] = s;
 }
+
+<%
+    def get_dep_indep_params_string(dep=True, indep=True, type_prefix=True, next_postfix=True):
+        str_ = ''
+        if indep:
+            for variable in sde.row_iterator('type', ['independent variable']):
+                if type_prefix:
+                    str_ += 'float '
+                str_ += variable.Index
+                if next_postfix:
+                    str_ += '_next'
+                str_ += ','
+        if dep:
+            for variable in sde.row_iterator('type', ['dependent variable']):
+                if type_prefix:
+                    str_ += 'float '
+                str_ += variable.Index
+                if next_postfix:
+                    str_ += '_next'
+                str_ += ','
+        return str_[:-1] 
+    dependent_vars_count = len(list(sde.row_iterator('type', ['dependent variable'])))
+%>
+% for derivative_order in reversed(range(dependent_vars_count)):
+	__device__ __inline__ float ${list(sde.row_iterator('derivative_order', [derivative_order]))[0].Index}_diff(${get_dep_indep_params_string(dep=True, indep=True, type_prefix=True, next_postfix=False)})
+	{
+	    return ${sde.rhs_string[derivative_order]};
+	}
+% endfor
 
 __device__ __inline__ void calc_avg(float &current_avg, float new_value, int current_step)
 {
@@ -63,20 +92,9 @@ extern "C" __global__ void prepare_simulation(float *summary, float* output)
             %>\
         % endif
     % endfor
-    
-    data[idx][${free_index}] = ${sde.rhs_string[-1]}; // rhs
-    <%
-    sde.lookup['rhs'] = free_index
-    free_index += 1
-    %>
 }
 
-__device__ void afterstep(
-    % for row in sde.row_iterator('type', ['dependent variable']):
-        float ${row.Index},
-    % endfor
-    float rhs
-)
+__device__ void afterstep(${get_dep_indep_params_string(dep=True, indep=True, type_prefix=True, next_postfix=False)})
 {
     
 }
@@ -90,12 +108,22 @@ extern "C" __global__ void continue_simulation(float *summary, float* output)
         float ${row.Index} = data[idx][${sde.lookup[str(row.Index)]}];
         % if row.type == 'dependent variable':
             float ${row.Index}_next;
+            float ${row.Index}_diff_value;
             float avg_period_${row.Index} = data[idx][${sde.lookup['avg_period_'+str(row.Index)]}];
             float avg_periods_${row.Index} = data[idx][${sde.lookup['avg_periods_'+str(row.Index)]}];
         % endif
     % endfor
-    float rhs = data[idx][${sde.lookup['rhs']}];
-    float rhs_next;
+    
+    float rk4_v_diff_1 = v_diff(t, v, x);
+	float rk4_x_diff_1 = x_diff(t, v, x);
+	float rk4_v_diff_2 = v_diff(t + dt/2.0, v + dt*rk4_v_diff_1/2.0, x + dt*rk4_x_diff_1/2.0);
+	float rk4_x_diff_2 = x_diff(t + dt/2.0, v + dt*rk4_v_diff_1/2.0, x + dt*rk4_x_diff_1/2.0);
+	float rk4_v_diff_3 = v_diff(t + dt/2.0, v + dt*rk4_v_diff_2/2.0, x + dt*rk4_x_diff_2/2.0);
+	float rk4_x_diff_3 = x_diff(t + dt/2.0, v + dt*rk4_v_diff_2/2.0, x + dt*rk4_x_diff_2/2.0);
+	float rk4_v_diff_4 = v_diff(t + dt, v + dt*rk4_v_diff_3, x + dt*rk4_x_diff_3);
+	float rk4_x_diff_4 = x_diff(t + dt, v + dt*rk4_v_diff_3, x + dt*rk4_x_diff_3);
+	float rk4_v_diff = (rk4_v_diff_1 + 2*rk4_v_diff_2 + 2*rk4_v_diff_3 + rk4_v_diff_4)/6.0;
+	float rk4_x_diff = (rk4_x_diff_1 + 2*rk4_x_diff_2 + 2*rk4_x_diff_3 + rk4_x_diff_4)/6.0;
     
     <% dependent_vars = len(list(sde.row_iterator('type', 'dependent variable'))) %>
 
@@ -117,19 +145,50 @@ extern "C" __global__ void continue_simulation(float *summary, float* output)
         
         /**
     	 * Integration
-    	 */
-        <%include file="euler.mako"/>
+    	 */ 
+        % if sde.settings['simulation']['integration_method'] == 'euler':
+##		    <%include file="euler.mako"/>
+            % for derivative_order in reversed(range(dependent_vars_count)):
+                <% curr_var = list(sde.row_iterator('derivative_order', [derivative_order]))[0].Index %>\
+                ${curr_var}_diff_value = ${curr_var}_diff(${get_dep_indep_params_string(dep=True, indep=True, type_prefix=False, next_postfix=False)});
+            % endfor
+		% elif sde.settings['simulation']['integration_method'] == 'rk4':
+##			<%include file="rk4.mako"/>
+            % for derivative_order in reversed(range(dependent_vars_count)):
+                <% curr_var = list(sde.row_iterator('derivative_order', [derivative_order]))[0].Index %>\
+                ${curr_var}_diff_value = rk4_${curr_var}_diff;
+            % endfor
+		% endif
+         
+        % for derivative_order in reversed(range(dependent_vars_count)):
+            <% curr_var = list(sde.row_iterator('derivative_order', [derivative_order]))[0].Index %>\
+            ${curr_var}_next = ${curr_var} + ${curr_var}_diff_value * d${list(sde.row_iterator('type', ['independent variable']))[0].Index};
+        % endfor
+        
+        % for independent_var in sde.row_iterator('type', ['independent variable']):
+            ${independent_var.Index} += d${independent_var.Index};
+        % endfor
+
+        % for dependent_var in sde.row_iterator('type', ['dependent variable']):
+            ${dependent_var.Index} = ${dependent_var.Index}_next;
+        % endfor
+        
+        rk4_v_diff_1 = v_diff(t, v, x);
+        rk4_x_diff_1 = x_diff(t, v, x);
+        rk4_v_diff_2 = v_diff(t + dt/2.0, v + dt*rk4_v_diff_1/2.0, x + dt*rk4_x_diff_1/2.0);
+        rk4_x_diff_2 = x_diff(t + dt/2.0, v + dt*rk4_v_diff_1/2.0, x + dt*rk4_x_diff_1/2.0);
+        rk4_v_diff_3 = v_diff(t + dt/2.0, v + dt*rk4_v_diff_2/2.0, x + dt*rk4_x_diff_2/2.0);
+        rk4_x_diff_3 = x_diff(t + dt/2.0, v + dt*rk4_v_diff_2/2.0, x + dt*rk4_x_diff_2/2.0);
+        rk4_v_diff_4 = v_diff(t + dt, v + dt*rk4_v_diff_3, x + dt*rk4_x_diff_3);
+        rk4_x_diff_4 = x_diff(t + dt, v + dt*rk4_v_diff_3, x + dt*rk4_x_diff_3);
+        rk4_v_diff = (rk4_v_diff_1 + 2*rk4_v_diff_2 + 2*rk4_v_diff_3 + rk4_v_diff_4)/6.0;
+        rk4_x_diff = (rk4_x_diff_1 + 2*rk4_x_diff_2 + 2*rk4_x_diff_3 + rk4_x_diff_4)/6.0;
         
         /**
     	 * Afterstep
     	 */
-        if(current_step % ${sde.settings['simulation']['afterstep_every']} == 0){
-            afterstep(
-            % for row in sde.row_iterator('type', ['dependent variable']):
-                ${row.Index}_next,
-            % endfor
-            rhs_next
-            );
+        if(current_step % ${sde.settings['constants']['afterstep_every']} == 0){
+            afterstep(${get_dep_indep_params_string(dep=True, indep=True, type_prefix=False, next_postfix=False)});
         }
         
         current_step += 1;
@@ -143,7 +202,6 @@ extern "C" __global__ void continue_simulation(float *summary, float* output)
             data[idx][${sde.lookup['avg_periods_'+str(row.Index)]}] = avg_periods_${row.Index};
         % endif
     % endfor
-    data[idx][${sde.lookup['rhs']}] = rhs;
 }
 
 extern "C" __global__ void end_simulation(float *summary, float* output)
