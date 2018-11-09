@@ -105,6 +105,7 @@ extern "C" __global__ void continue_simulation(float *summary, float *output)
 	/**
     	 * Integration
     	 */
+
 		v_diff_value = rk4_v_diff;
 		x_diff_value = rk4_x_diff;
 

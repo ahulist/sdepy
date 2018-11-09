@@ -79,6 +79,7 @@ extern "C" __global__ void continue_simulation(float *summary, float* output)
             float avg_period_x = data[idx][6];
             float avg_periods_x = data[idx][7];
     
+    
     float rk4_v_diff_1 = v_diff(t, v, x);
 	float rk4_x_diff_1 = x_diff(t, v, x);
 	float rk4_v_diff_2 = v_diff(t + dt/2.0, v + dt*rk4_v_diff_1/2.0, x + dt*rk4_x_diff_1/2.0);
@@ -89,6 +90,7 @@ extern "C" __global__ void continue_simulation(float *summary, float* output)
 	float rk4_x_diff_4 = x_diff(t + dt, v + dt*rk4_v_diff_3, x + dt*rk4_x_diff_3);
 	float rk4_v_diff = (rk4_v_diff_1 + 2*rk4_v_diff_2 + 2*rk4_v_diff_3 + rk4_v_diff_4)/6.0;
 	float rk4_x_diff = (rk4_x_diff_1 + 2*rk4_x_diff_2 + 2*rk4_x_diff_3 + rk4_x_diff_4)/6.0;
+
     
     
 
@@ -109,28 +111,30 @@ extern "C" __global__ void continue_simulation(float *summary, float* output)
         
         /**
     	 * Integration
-    	 */ 
-                                v_diff_value = rk4_v_diff;
-                                x_diff_value = rk4_x_diff;
+    	 */
          
-                        v_next = v + v_diff_value * dt;
-                        x_next = x + x_diff_value * dt;
-        
-            t += dt;
+                v_diff_value = rk4_v_diff;
+                x_diff_value = rk4_x_diff;
 
-            v = v_next;
-            x = x_next;
-        
-        rk4_v_diff_1 = v_diff(t, v, x);
-        rk4_x_diff_1 = x_diff(t, v, x);
-        rk4_v_diff_2 = v_diff(t + dt/2.0, v + dt*rk4_v_diff_1/2.0, x + dt*rk4_x_diff_1/2.0);
-        rk4_x_diff_2 = x_diff(t + dt/2.0, v + dt*rk4_v_diff_1/2.0, x + dt*rk4_x_diff_1/2.0);
-        rk4_v_diff_3 = v_diff(t + dt/2.0, v + dt*rk4_v_diff_2/2.0, x + dt*rk4_x_diff_2/2.0);
-        rk4_x_diff_3 = x_diff(t + dt/2.0, v + dt*rk4_v_diff_2/2.0, x + dt*rk4_x_diff_2/2.0);
-        rk4_v_diff_4 = v_diff(t + dt, v + dt*rk4_v_diff_3, x + dt*rk4_x_diff_3);
-        rk4_x_diff_4 = x_diff(t + dt, v + dt*rk4_v_diff_3, x + dt*rk4_x_diff_3);
-        rk4_v_diff = (rk4_v_diff_1 + 2*rk4_v_diff_2 + 2*rk4_v_diff_3 + rk4_v_diff_4)/6.0;
-        rk4_x_diff = (rk4_x_diff_1 + 2*rk4_x_diff_2 + 2*rk4_x_diff_3 + rk4_x_diff_4)/6.0;
+                v_next = v + v_diff_value * dt;
+                x_next = x + x_diff_value * dt;
+
+        t += dt;
+
+        v = v_next;
+        x = x_next;
+
+    rk4_v_diff_1 = v_diff(t, v, x);
+	rk4_x_diff_1 = x_diff(t, v, x);
+	rk4_v_diff_2 = v_diff(t + dt/2.0, v + dt*rk4_v_diff_1/2.0, x + dt*rk4_x_diff_1/2.0);
+	rk4_x_diff_2 = x_diff(t + dt/2.0, v + dt*rk4_v_diff_1/2.0, x + dt*rk4_x_diff_1/2.0);
+	rk4_v_diff_3 = v_diff(t + dt/2.0, v + dt*rk4_v_diff_2/2.0, x + dt*rk4_x_diff_2/2.0);
+	rk4_x_diff_3 = x_diff(t + dt/2.0, v + dt*rk4_v_diff_2/2.0, x + dt*rk4_x_diff_2/2.0);
+	rk4_v_diff_4 = v_diff(t + dt, v + dt*rk4_v_diff_3, x + dt*rk4_x_diff_3);
+	rk4_x_diff_4 = x_diff(t + dt, v + dt*rk4_v_diff_3, x + dt*rk4_x_diff_3);
+	rk4_v_diff = (rk4_v_diff_1 + 2*rk4_v_diff_2 + 2*rk4_v_diff_3 + rk4_v_diff_4)/6.0;
+	rk4_x_diff = (rk4_x_diff_1 + 2*rk4_x_diff_2 + 2*rk4_x_diff_3 + rk4_x_diff_4)/6.0;
+
         
         /**
     	 * Afterstep
