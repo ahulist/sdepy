@@ -19,7 +19,8 @@ __shared__ float data [4][12];
 
 __global__ void initkernel(int seed)
 {
-    int idx = threadIdx.x + blockIdx.x * blockDim.x;
+    int idx = threadIdx.x + threadIdx.y * 2;
+    
     curandState_t* s = new curandState_t;
     curand_init(seed, idx, 0, s);
     curand_states[idx] = s;
@@ -49,7 +50,7 @@ __global__ void initkernel(int seed)
     dependent_vars_count = len(list(sde.row_iterator('type', ['dependent variable'])))
 %>
 % for derivative_order in reversed(range(dependent_vars_count)):
-	__device__ __inline__ float ${list(sde.row_iterator('derivative_order', [derivative_order]))[0].Index}_diff(${get_dep_indep_params_string(dep=True, indep=True, type_prefix=True, next_postfix=False)})
+	__device__ __inline__ float ${list(sde.row_iterator('derivative_order', [derivative_order]))[0].Index}_diff(int idx, ${get_dep_indep_params_string(dep=True, indep=True, type_prefix=True, next_postfix=False)})
 	{
 	    return ${sde.rhs_string[derivative_order]};
 	}
