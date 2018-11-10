@@ -84,8 +84,8 @@ extern "C" __global__ void continue_simulation(float *summary, float *output)
 	float rk4_x_diff_3 = x_diff(t + dt / 2.0, v + dt * rk4_v_diff_2 / 2.0, x + dt * rk4_x_diff_2 / 2.0);
 	float rk4_v_diff_4 = v_diff(t + dt, v + dt * rk4_v_diff_3, x + dt * rk4_x_diff_3);
 	float rk4_x_diff_4 = x_diff(t + dt, v + dt * rk4_v_diff_3, x + dt * rk4_x_diff_3);
-	float rk4_v_diff = (rk4_v_diff_1 + 2 * rk4_v_diff_2 + 2 * rk4_v_diff_3 + rk4_v_diff_4) / 6.0;
-	float rk4_x_diff = (rk4_x_diff_1 + 2 * rk4_x_diff_2 + 2 * rk4_x_diff_3 + rk4_x_diff_4) / 6.0;
+	v_diff_value = (rk4_v_diff_1 + 2 * rk4_v_diff_2 + 2 * rk4_v_diff_3 + rk4_v_diff_4) / 6.0;
+	x_diff_value = (rk4_x_diff_1 + 2 * rk4_x_diff_2 + 2 * rk4_x_diff_3 + rk4_x_diff_4) / 6.0;
 
 	for (int i = 0; i < steps_per_kernel_call; i++) {
 	/**
@@ -105,10 +105,6 @@ extern "C" __global__ void continue_simulation(float *summary, float *output)
 	/**
     	 * Integration
     	 */
-
-		v_diff_value = rk4_v_diff;
-		x_diff_value = rk4_x_diff;
-
 		v_next = v + v_diff_value * dt;
 		x_next = x + x_diff_value * dt;
 
@@ -125,8 +121,8 @@ extern "C" __global__ void continue_simulation(float *summary, float *output)
 		rk4_x_diff_3 = x_diff(t + dt / 2.0, v + dt * rk4_v_diff_2 / 2.0, x + dt * rk4_x_diff_2 / 2.0);
 		rk4_v_diff_4 = v_diff(t + dt, v + dt * rk4_v_diff_3, x + dt * rk4_x_diff_3);
 		rk4_x_diff_4 = x_diff(t + dt, v + dt * rk4_v_diff_3, x + dt * rk4_x_diff_3);
-		rk4_v_diff = (rk4_v_diff_1 + 2 * rk4_v_diff_2 + 2 * rk4_v_diff_3 + rk4_v_diff_4) / 6.0;
-		rk4_x_diff = (rk4_x_diff_1 + 2 * rk4_x_diff_2 + 2 * rk4_x_diff_3 + rk4_x_diff_4) / 6.0;
+		v_diff_value = (rk4_v_diff_1 + 2 * rk4_v_diff_2 + 2 * rk4_v_diff_3 + rk4_v_diff_4) / 6.0;
+		x_diff_value = (rk4_x_diff_1 + 2 * rk4_x_diff_2 + 2 * rk4_x_diff_3 + rk4_x_diff_4) / 6.0;
 
 	/**
     	 * Afterstep

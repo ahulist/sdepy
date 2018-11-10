@@ -27,7 +27,7 @@ __global__ void initkernel(int seed)
 
 <%
     def get_dep_indep_params_string(dep=True, indep=True, type_prefix=True, next_postfix=True):
-        str_ = ''
+        str_ = ' '
         if indep:
             for variable in sde.row_iterator('type', ['independent variable']):
                 if type_prefix:
@@ -44,7 +44,8 @@ __global__ void initkernel(int seed)
                 if next_postfix:
                     str_ += '_next'
                 str_ += ','
-        return str_[:-1] 
+        return str_[:-1]
+        
     dependent_vars_count = len(list(sde.row_iterator('type', ['dependent variable'])))
 %>
 % for derivative_order in reversed(range(dependent_vars_count)):
