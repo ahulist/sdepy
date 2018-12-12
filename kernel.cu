@@ -2,31 +2,30 @@
 #include <math.h>
 #include <curand_kernel.h>
 
-const int threads_total = 4;
+const int threads_total = 5;
 __device__ curandState_t *curand_states[threads_total];
 
 __constant__ int steps_per_kernel_call = 200;
 __constant__ int steps_per_period = 2000;
 __constant__ int periods = 1;
-__constant__ int number_of_threads = 4;
 __constant__ int afterstep_every = 1;
 
 __constant__ float dt = 0.0020949113096826;
 
-__shared__ float data[4][12];
+__shared__ float data[threads_total][8];
 
 __global__ void initkernel(int seed)
 {
-	int idx = threadIdx.x + threadIdx.y * 2;
+	int idx = blockIdx.x * blockDim.x + threadIdx.x;
 
 	curandState_t *s = new curandState_t;
-	curand_init(seed, idx, 0, s);
+	curand_init(seed * idx, idx, 0, s);
 	curand_states[idx] = s;
 }
 
 __device__ __inline__ float v_diff(int idx, float t, float v, float x)
 {
-	return -0.100694794079146 * v + 0.100694794079146 * curand_uniform(curand_states[idx]) +
+	return -0.100694794079146 * v + 0.0201389588158292 * curand_uniform(curand_states[idx]) +
 	    0.201389588158292 * M_PI * sinf(2 * M_PI * x) + 0.415366025576478 * cosf(3.749 * t) + 0.100694794079146;
 }
 
@@ -42,7 +41,7 @@ __device__ __inline__ void calc_avg(float &current_avg, float new_value, int cur
 
 extern "C" __global__ void prepare_simulation(float *summary, float *output)
 {
-	int idx = threadIdx.x + threadIdx.y * 2;
+	int idx = blockIdx.x * blockDim.x + threadIdx.x;
 
 	data[idx][0] = 0.0f;	// current step
 
@@ -62,7 +61,7 @@ __device__ void afterstep(float t, float v, float x)
 
 extern "C" __global__ void continue_simulation(float *summary, float *output)
 {
-	int idx = threadIdx.x + threadIdx.y * 2;
+	int idx = blockIdx.x * blockDim.x + threadIdx.x;
 
 	int current_step = (int)data[idx][0];
 	float t = data[idx][1];
@@ -147,7 +146,7 @@ extern "C" __global__ void continue_simulation(float *summary, float *output)
 
 extern "C" __global__ void end_simulation(float *summary, float *output)
 {
-	int idx = threadIdx.x + threadIdx.y * 2;
+	int idx = blockIdx.x * blockDim.x + threadIdx.x;
 
 	summary[idx * 6 + 0] = data[idx][2];	// v
 	summary[idx * 6 + 1] = data[idx][3];	// avg_period_v

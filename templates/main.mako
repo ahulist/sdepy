@@ -2,8 +2,10 @@
 #include <math.h>
 #include <curand_kernel.h>
 
-const int threads_total = ${sde.settings['constants']['number_of_threads']};
-__device__ curandState_t* curand_states[threads_total];
+const int threads_total = ${sde.settings['simulation']['paths']};
+% if len(list(sde.row_iterator('type', 'noise'))) > 0:
+    __device__ curandState_t* curand_states[threads_total];
+% endif
 
 % for sim_name, sim_value in sde.settings['constants'].items():
     __constant__ ${'float' if isinstance(sim_value, float) else 'int'} ${sim_name} = ${sim_value};
@@ -13,17 +15,19 @@ __device__ curandState_t* curand_states[threads_total];
     __constant__ ${'float' if isinstance(row.step, float) else 'int'} d${row.Index} = ${row.step};
 % endfor
 
-__shared__ float data [4][12];
+__shared__ float data [threads_total][${1 + len(list(sde.row_iterator('type', 'independent variable'))) + 3*len(list(sde.row_iterator('type', 'dependent variable')))}];
 
 ## #######################
 
 __global__ void initkernel(int seed)
 {
-    int idx = threadIdx.x + threadIdx.y * 2;
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
     
-    curandState_t* s = new curandState_t;
-    curand_init(seed, idx, 0, s);
-    curand_states[idx] = s;
+    % if len(list(sde.row_iterator('type', 'noise'))) > 0:
+        curandState_t* s = new curandState_t;
+        curand_init(seed*idx, idx, 0, s);
+        curand_states[idx] = s;
+    % endif
 }
 
 <%
@@ -63,7 +67,7 @@ __device__ __inline__ void calc_avg(float &current_avg, float new_value, int cur
 
 extern "C" __global__ void prepare_simulation(float *summary, float* output)
 {
-    int idx = threadIdx.x + threadIdx.y * 2;
+    int idx =  blockIdx.x  *blockDim.x + threadIdx.x;
     
     <% free_index = 0 %>
     
@@ -103,7 +107,7 @@ __device__ void afterstep(${get_dep_indep_params_string(dep=True, indep=True, ty
 
 extern "C" __global__ void continue_simulation(float *summary, float* output)
 {
-    int idx = threadIdx.x + threadIdx.y * 2;
+    int idx =  blockIdx.x * blockDim.x + threadIdx.x;
     
     int current_step = (int) data[idx][${sde.lookup['current step']}];
     % for row in sde.row_iterator('type', ['dependent variable', 'independent variable']):
@@ -163,7 +167,7 @@ extern "C" __global__ void continue_simulation(float *summary, float* output)
 
 extern "C" __global__ void end_simulation(float *summary, float* output)
 {
-    int idx = threadIdx.x + threadIdx.y * 2;
+    int idx =  blockIdx.x * blockDim.x + threadIdx.x;
     
     <% len_ = len(list(sde.row_iterator('type', ['dependent variable']))) %>
     % for counter, row in enumerate(sde.row_iterator('type', ['dependent variable'])):
