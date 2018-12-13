@@ -2,13 +2,13 @@
 #include <math.h>
 #include <curand_kernel.h>
 
-const int threads_total = 5;
+const int threads_total = 20;
 __device__ curandState_t *curand_states[threads_total];
 
 __constant__ int steps_per_kernel_call = 200;
 __constant__ int steps_per_period = 2000;
-__constant__ int periods = 1;
-__constant__ int afterstep_every = 1;
+__constant__ int periods = 2;
+__constant__ int afterstep_every = 10;
 
 __constant__ float dt = 0.0020949113096826;
 
@@ -16,10 +16,14 @@ __shared__ float data[threads_total][8];
 
 __global__ void initkernel(int seed)
 {
-	int idx = blockIdx.x * blockDim.x + threadIdx.x;
+	//int idx = blockIdx.x * blockDim.x + threadIdx.x;
+	int blockId = blockIdx.x + blockIdx.y * gridDim.x + gridDim.x * gridDim.y * blockIdx.z;
+	int idx =
+	    blockId * (blockDim.x * blockDim.y * blockDim.z) + (threadIdx.z * (blockDim.x * blockDim.y)) +
+	    (threadIdx.y * blockDim.x) + threadIdx.x;
 
 	curandState_t *s = new curandState_t;
-	curand_init(seed * idx, idx, 0, s);
+	curand_init(seed * idx, idx, 0, s);	// czy mnozenie przez idx jest potrzebne?
 	curand_states[idx] = s;
 }
 
@@ -39,9 +43,13 @@ __device__ __inline__ void calc_avg(float &current_avg, float new_value, int cur
 	current_avg += (new_value - current_avg) / (current_step % steps_per_period + 1);
 }
 
-extern "C" __global__ void prepare_simulation(float *summary, float *output)
+extern "C" __global__ void prepare_simulation()
 {
-	int idx = blockIdx.x * blockDim.x + threadIdx.x;
+	//int idx =  blockIdx.x  *blockDim.x + threadIdx.x;
+	int blockId = blockIdx.x + blockIdx.y * gridDim.x + gridDim.x * gridDim.y * blockIdx.z;
+	int idx =
+	    blockId * (blockDim.x * blockDim.y * blockDim.z) + (threadIdx.z * (blockDim.x * blockDim.y)) +
+	    (threadIdx.y * blockDim.x) + threadIdx.x;
 
 	data[idx][0] = 0.0f;	// current step
 
@@ -59,9 +67,13 @@ __device__ void afterstep(float t, float v, float x)
 
 }
 
-extern "C" __global__ void continue_simulation(float *summary, float *output)
+extern "C" __global__ void continue_simulation()
 {
-	int idx = blockIdx.x * blockDim.x + threadIdx.x;
+	//int idx =  blockIdx.x * blockDim.x + threadIdx.x;
+	int blockId = blockIdx.x + blockIdx.y * gridDim.x + gridDim.x * gridDim.y * blockIdx.z;
+	int idx =
+	    blockId * (blockDim.x * blockDim.y * blockDim.z) + (threadIdx.z * (blockDim.x * blockDim.y)) +
+	    (threadIdx.y * blockDim.x) + threadIdx.x;
 
 	int current_step = (int)data[idx][0];
 	float t = data[idx][1];
@@ -127,7 +139,7 @@ extern "C" __global__ void continue_simulation(float *summary, float *output)
 	/**
     	 * Afterstep
     	 */
-		if (current_step % 1 == 0) {
+		if (current_step % 10 == 0) {
 			afterstep(t, v, x);
 		}
 
@@ -144,9 +156,13 @@ extern "C" __global__ void continue_simulation(float *summary, float *output)
 	data[idx][7] = avg_periods_x;
 }
 
-extern "C" __global__ void end_simulation(float *summary, float *output)
+extern "C" __global__ void end_simulation(float *summary)
 {
-	int idx = blockIdx.x * blockDim.x + threadIdx.x;
+	//int idx =  blockIdx.x * blockDim.x + threadIdx.x;
+	int blockId = blockIdx.x + blockIdx.y * gridDim.x + gridDim.x * gridDim.y * blockIdx.z;
+	int idx =
+	    blockId * (blockDim.x * blockDim.y * blockDim.z) + (threadIdx.z * (blockDim.x * blockDim.y)) +
+	    (threadIdx.y * blockDim.x) + threadIdx.x;
 
 	summary[idx * 6 + 0] = data[idx][2];	// v
 	summary[idx * 6 + 1] = data[idx][3];	// avg_period_v

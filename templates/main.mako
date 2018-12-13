@@ -21,11 +21,13 @@ __shared__ float data [threads_total][${1 + len(list(sde.row_iterator('type', 'i
 
 __global__ void initkernel(int seed)
 {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    //int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    int blockId = blockIdx.x + blockIdx.y * gridDim.x + gridDim.x * gridDim.y * blockIdx.z;
+    int idx = blockId * (blockDim.x * blockDim.y * blockDim.z) + (threadIdx.z * (blockDim.x * blockDim.y)) + (threadIdx.y * blockDim.x) + threadIdx.x;
     
     % if len(list(sde.row_iterator('type', 'noise'))) > 0:
         curandState_t* s = new curandState_t;
-        curand_init(seed*idx, idx, 0, s);
+        curand_init(seed*idx, idx, 0, s); // czy mnozenie przez idx jest potrzebne?
         curand_states[idx] = s;
     % endif
 }
@@ -65,9 +67,11 @@ __device__ __inline__ void calc_avg(float &current_avg, float new_value, int cur
     current_avg += (new_value - current_avg) / (current_step % steps_per_period + 1);
 }
 
-extern "C" __global__ void prepare_simulation(float *summary, float* output)
+extern "C" __global__ void prepare_simulation()
 {
-    int idx =  blockIdx.x  *blockDim.x + threadIdx.x;
+    //int idx =  blockIdx.x  *blockDim.x + threadIdx.x;
+    int blockId = blockIdx.x + blockIdx.y * gridDim.x + gridDim.x * gridDim.y * blockIdx.z;
+    int idx = blockId * (blockDim.x * blockDim.y * blockDim.z) + (threadIdx.z * (blockDim.x * blockDim.y)) + (threadIdx.y * blockDim.x) + threadIdx.x;
     
     <% free_index = 0 %>
     
@@ -105,9 +109,11 @@ __device__ void afterstep(${get_dep_indep_params_string(dep=True, indep=True, ty
     
 }
 
-extern "C" __global__ void continue_simulation(float *summary, float* output)
+extern "C" __global__ void continue_simulation()
 {
-    int idx =  blockIdx.x * blockDim.x + threadIdx.x;
+    //int idx =  blockIdx.x * blockDim.x + threadIdx.x;
+    int blockId = blockIdx.x + blockIdx.y * gridDim.x + gridDim.x * gridDim.y * blockIdx.z;
+    int idx = blockId * (blockDim.x * blockDim.y * blockDim.z) + (threadIdx.z * (blockDim.x * blockDim.y)) + (threadIdx.y * blockDim.x) + threadIdx.x;
     
     int current_step = (int) data[idx][${sde.lookup['current step']}];
     % for row in sde.row_iterator('type', ['dependent variable', 'independent variable']):
@@ -165,9 +171,11 @@ extern "C" __global__ void continue_simulation(float *summary, float* output)
     % endfor
 }
 
-extern "C" __global__ void end_simulation(float *summary, float* output)
+extern "C" __global__ void end_simulation(float *summary)
 {
-    int idx =  blockIdx.x * blockDim.x + threadIdx.x;
+    //int idx =  blockIdx.x * blockDim.x + threadIdx.x;
+    int blockId = blockIdx.x + blockIdx.y * gridDim.x + gridDim.x * gridDim.y * blockIdx.z;
+    int idx = blockId * (blockDim.x * blockDim.y * blockDim.z) + (threadIdx.z * (blockDim.x * blockDim.y)) + (threadIdx.y * blockDim.x) + threadIdx.x;
     
     <% len_ = len(list(sde.row_iterator('type', ['dependent variable']))) %>
     % for counter, row in enumerate(sde.row_iterator('type', ['dependent variable'])):
