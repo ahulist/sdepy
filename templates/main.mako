@@ -2,9 +2,8 @@
 #include <math.h>
 #include <curand_kernel.h>
 
-const int threads_total = ${sde.settings['simulation']['paths']};
 % if len(list(sde.row_iterator('type', 'noise'))) > 0:
-    __device__ curandState_t* curand_states[threads_total];
+    __device__ curandState_t* curand_states[${sde.settings['simulation']['number_of_threads']}];
 % endif
 
 % for sim_name, sim_value in sde.settings['constants'].items():
@@ -15,7 +14,21 @@ const int threads_total = ${sde.settings['simulation']['paths']};
     __constant__ ${'float' if isinstance(row.step, float) else 'int'} d${row.Index} = ${row.step};
 % endfor
 
-__shared__ float data [threads_total][${1 + len(list(sde.row_iterator('type', 'independent variable'))) + 3*len(list(sde.row_iterator('type', 'dependent variable')))}];
+% for row in sde.row_iterator('type', 'parameter'):
+    __device__ float parameter_${row.Index}_values[${len(row.values)}] = {\
+    ${','.join([str(x) for x in row.values])}\
+    };\
+% endfor
+
+__device__ int parameters_values_lens[${len(list(sde.row_iterator('type', 'parameter')))}] = {
+    ${','.join([str(len(x.values)) for x in sde.row_iterator('type', 'parameter')])}
+};
+
+__device__ float* parameters_values[${len(list(sde.row_iterator('type', 'parameter')))}] = {
+    ${','.join(['parameter_'+str(x.Index)+'_values' for x in sde.row_iterator('type', 'parameter')])}
+};
+
+__device__ float data [${sde.settings['simulation']['number_of_threads']}][${1 + len(list(sde.row_iterator('type', 'independent variable'))) + 3*len(list(sde.row_iterator('type', 'dependent variable')))}];
 
 ## #######################
 
@@ -114,6 +127,13 @@ extern "C" __global__ void continue_simulation()
     //int idx =  blockIdx.x * blockDim.x + threadIdx.x;
     int blockId = blockIdx.x + blockIdx.y * gridDim.x + gridDim.x * gridDim.y * blockIdx.z;
     int idx = blockId * (blockDim.x * blockDim.y * blockDim.z) + (threadIdx.z * (blockDim.x * blockDim.y)) + (threadIdx.y * blockDim.x) + threadIdx.x;
+    
+    float my_params[${len(list(sde.row_iterator('type','parameter')))}];
+    int index = (int) idx / ${sde.settings['simulation']['paths']};
+    for(int i=0; i<${len(list(sde.row_iterator('type','parameter')))}; i++){
+        my_params[i] = parameters_values[i][index%parameters_values_lens[i]];
+        index = (int) index / parameters_values_lens[i];
+    }
     
     int current_step = (int) data[idx][${sde.lookup['current step']}];
     % for row in sde.row_iterator('type', ['dependent variable', 'independent variable']):

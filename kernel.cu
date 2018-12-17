@@ -2,8 +2,7 @@
 #include <math.h>
 #include <curand_kernel.h>
 
-const int threads_total = 20;
-__device__ curandState_t *curand_states[threads_total];
+__device__ curandState_t *curand_states[15360];
 
 __constant__ int steps_per_kernel_call = 200;
 __constant__ int steps_per_period = 2000;
@@ -12,7 +11,23 @@ __constant__ int afterstep_every = 10;
 
 __constant__ float dt = 0.0020949113096826;
 
-__shared__ float data[threads_total][8];
+__device__ float parameter_D_values[2] = { 0.2, 2.0 };
+__device__ float parameter_f_values[1] = { 1.0 };
+__device__ float parameter_omega_values[1] = { 3.749 };
+__device__ float parameter_a_values[5] = { 4.125, 4.625, 5.125, 5.625, 6.125 };
+__device__ float parameter_gamma_values[1] = { 1.0 };
+__device__ float parameter_m_values[3] = { 9.931, 9.831, 9.731 };
+
+__device__ int parameters_values_lens[6] = {
+	2, 1, 1, 5, 1, 3
+};
+
+__device__ float *parameters_values[6] = {
+	parameter_D_values, parameter_f_values, parameter_omega_values, parameter_a_values, parameter_gamma_values,
+	    parameter_m_values
+};
+
+__device__ float data[15360][8];
 
 __global__ void initkernel(int seed)
 {
@@ -74,6 +89,13 @@ extern "C" __global__ void continue_simulation()
 	int idx =
 	    blockId * (blockDim.x * blockDim.y * blockDim.z) + (threadIdx.z * (blockDim.x * blockDim.y)) +
 	    (threadIdx.y * blockDim.x) + threadIdx.x;
+
+	float my_params[6];
+	int index = (int)idx / 500;
+	for (int i = 0; i < 6; i++) {
+		my_params[i] = parameters_values[i][index % parameters_values_lens[i]];
+		index = (int)index / parameters_values_lens[i];
+	}
 
 	int current_step = (int)data[idx][0];
 	float t = data[idx][1];
