@@ -25,7 +25,7 @@
         % if what_u_want == 'integration_initialization':
             float 
         % endif
-        rk4_${dep_var}_diff_1 = ${dep_var}_diff(idx, ${get_dep_indep_params_string(dep=True, indep=True, type_prefix=False, next_postfix=False)});
+        rk4_${dep_var}_diff_1 = ${dep_var}_diff(idx, ${get_dep_indep_params_string(dep=True, indep=True, type_prefix=False, next_postfix=False)}${''.join([', my_params[{}]'.format(x) for x in range(sum([1 for row in sde.row_iterator('type', 'parameter') if len(row.values)>1]))])});
     % endfor
     % for dep_var in deps:
         <%
@@ -34,7 +34,7 @@
             str_ += '{} + d{}/2.0, '.format(indep, indep)
             for dep in deps:
                 str_ += '{} + d{}*rk4_{}_diff_1/2.0, '.format(dep, indep, dep)
-        str_ = str_.strip()[:-1]
+        str_ = str_.strip()[:-1] + ''.join([', my_params[{}]'.format(x) for x in range(sum([1 for row in sde.row_iterator('type', 'parameter') if len(row.values)>1]))])
         %>\
         % if what_u_want == 'integration_initialization':
             float 
@@ -48,7 +48,7 @@
             str_ += '{} + d{}/2.0, '.format(indep, indep)
             for dep in deps:
                 str_ += '{} + d{}*rk4_{}_diff_2/2.0, '.format(dep, indep, dep)
-        str_ = str_.strip()[:-1]
+        str_ = str_.strip()[:-1] + ''.join([', my_params[{}]'.format(x) for x in range(sum([1 for row in sde.row_iterator('type', 'parameter') if len(row.values)>1]))])
         %>\
         % if what_u_want == 'integration_initialization':
             float 
@@ -62,7 +62,7 @@
             str_ += '{} + d{}, '.format(indep, indep)
             for dep in deps:
                 str_ += '{} + d{}*rk4_{}_diff_3, '.format(dep, indep, dep)
-        str_ = str_.strip()[:-1]
+        str_ = str_.strip()[:-1] + ''.join([', my_params[{}]'.format(x) for x in range(sum([1 for row in sde.row_iterator('type', 'parameter') if len(row.values)>1]))])
         %>\
         % if what_u_want == 'integration_initialization':
             float 

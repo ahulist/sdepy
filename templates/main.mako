@@ -14,19 +14,24 @@
     __constant__ ${'float' if isinstance(row.step, float) else 'int'} d${row.Index} = ${row.step};
 % endfor
 
-% for row in sde.row_iterator('type', 'parameter'):
-    __device__ float parameter_${row.Index}_values[${len(row.values)}] = {\
-    ${','.join([str(x) for x in row.values])}\
-    };\
-% endfor
+<% params_to_scan = sum([1 for row in sde.row_iterator('type', 'parameter') if len(row.values) > 1]) %>
+% if params_to_scan > 0:
+    % for row in sde.row_iterator('type', 'parameter'):
+        % if len(row.values) > 1:
+            __device__ float parameter_${row.Index}_values[${len(row.values)}] = {\
+            ${','.join([str(x) for x in row.values])}\
+            };\
+        % endif
+    % endfor
 
-__device__ int parameters_values_lens[${len(list(sde.row_iterator('type', 'parameter')))}] = {
-    ${','.join([str(len(x.values)) for x in sde.row_iterator('type', 'parameter')])}
-};
+    __device__ int parameters_values_lens[${params_to_scan}] = {
+        ${','.join([str(len(x.values)) for x in sde.row_iterator('type', 'parameter') if len(x.values) > 1])}
+    };
 
-__device__ float* parameters_values[${len(list(sde.row_iterator('type', 'parameter')))}] = {
-    ${','.join(['parameter_'+str(x.Index)+'_values' for x in sde.row_iterator('type', 'parameter')])}
-};
+    __device__ float* parameters_values[${params_to_scan}] = {
+        ${','.join(['parameter_'+str(x.Index)+'_values' for x in sde.row_iterator('type', 'parameter') if len(x.values) > 1])}
+    };
+% endif
 
 __device__ float data [${sde.settings['simulation']['number_of_threads']}][${1 + len(list(sde.row_iterator('type', 'independent variable'))) + 3*len(list(sde.row_iterator('type', 'dependent variable')))}];
 
@@ -69,7 +74,7 @@ __global__ void initkernel(int seed)
     dependent_vars_count = len(list(sde.row_iterator('type', ['dependent variable'])))
 %>
 % for derivative_order in reversed(range(dependent_vars_count)):
-	__device__ __inline__ float ${list(sde.row_iterator('derivative_order', [derivative_order]))[0].Index}_diff(int idx, ${get_dep_indep_params_string(dep=True, indep=True, type_prefix=True, next_postfix=False)})
+	__device__ __inline__ float ${list(sde.row_iterator('derivative_order', [derivative_order]))[0].Index}_diff(int idx, ${get_dep_indep_params_string(dep=True, indep=True, type_prefix=True, next_postfix=False)}${''.join([', float '+str(row.Index) for row in sde.row_iterator('type', 'parameter') if len(row.values)>1])})
 	{
 	    return ${sde.rhs_string[derivative_order]};
 	}
@@ -128,12 +133,14 @@ extern "C" __global__ void continue_simulation()
     int blockId = blockIdx.x + blockIdx.y * gridDim.x + gridDim.x * gridDim.y * blockIdx.z;
     int idx = blockId * (blockDim.x * blockDim.y * blockDim.z) + (threadIdx.z * (blockDim.x * blockDim.y)) + (threadIdx.y * blockDim.x) + threadIdx.x;
     
-    float my_params[${len(list(sde.row_iterator('type','parameter')))}];
-    int index = (int) idx / ${sde.settings['simulation']['paths']};
-    for(int i=0; i<${len(list(sde.row_iterator('type','parameter')))}; i++){
-        my_params[i] = parameters_values[i][index%parameters_values_lens[i]];
-        index = (int) index / parameters_values_lens[i];
-    }
+    % if params_to_scan > 0:
+        float my_params[${params_to_scan}];
+        int index = (int) idx / ${sde.settings['simulation']['paths']};
+        for(int i=0; i<${params_to_scan}; i++){
+            my_params[i] = parameters_values[i][index%parameters_values_lens[i]];
+            index = (int) index / parameters_values_lens[i];
+        }
+    % endif
     
     int current_step = (int) data[idx][${sde.lookup['current step']}];
     % for row in sde.row_iterator('type', ['dependent variable', 'independent variable']):
