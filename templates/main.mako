@@ -33,7 +33,7 @@
     };
 % endif
 
-__device__ float data [${sde.settings['simulation']['number_of_threads']}][${1 + len(list(sde.row_iterator('type', 'independent variable'))) + 3*len(list(sde.row_iterator('type', 'dependent variable')))}];
+__device__ ${sde.settings['simulation']['precision']} data [${sde.settings['simulation']['number_of_threads']}][${1 + len(list(sde.row_iterator('type', 'independent variable'))) + 3*len(list(sde.row_iterator('type', 'dependent variable')))}];
 
 ## #######################
 

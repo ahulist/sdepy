@@ -2,26 +2,16 @@
 #include <math.h>
 #include <curand_kernel.h>
 
-__device__ curandState_t *curand_states[320];
+__device__ curandState_t *curand_states[8];
 
-__constant__ int steps_per_kernel_call = 500;
-__constant__ int steps_per_period = 1000;
+__constant__ int steps_per_kernel_call = 1000;
+__constant__ int steps_per_period = 800;
 __constant__ int periods = 1000;
-__constant__ int afterstep_every = 10;
+__constant__ int afterstep_every = 1000;
 
-__constant__ float dt = 0.0020949113096826;
+__constant__ float dt = 0.0015707931852085263;
 
-__device__ float parameter_a_values[5] = { 4.125, 4.625, 5.125, 5.625, 6.125 };
-
-__device__ int parameters_values_lens[1] = {
-	5
-};
-
-__device__ float *parameters_values[1] = {
-	parameter_a_values
-};
-
-__device__ float data[320][8];
+__device__ double data[8][8];
 
 __global__ void initkernel(int seed)
 {
@@ -36,14 +26,13 @@ __global__ void initkernel(int seed)
 	curand_states[idx] = s;
 }
 
-__device__ __inline__ float v_diff(int idx, float t, float v, float x, float a)
+__device__ __inline__ float v_diff(int idx, float t, float v, float x)
 {
-	return 0.100694794079146 * a * cosf(3.749 * t) - 0.100694794079146 * v +
-	    0.0201389588158292 * curand_uniform(curand_states[idx]) + 0.201389588158292 * M_PI * sinf(2 * M_PI * x) +
-	    0.100694794079146;
+	return -3.18412015595821 * v + 16.3186157992858 * cosf(5.00001 * t) -
+	    6.36824031191641 * M_PI * cosf(2 * M_PI * x) + 3.18412015595821;
 }
 
-__device__ __inline__ float x_diff(int idx, float t, float v, float x, float a)
+__device__ __inline__ float x_diff(int idx, float t, float v, float x)
 {
 	return v;
 }
@@ -64,7 +53,7 @@ extern "C" __global__ void prepare_simulation()
 	data[idx][0] = 0.0f;	// current step
 
 	float t = data[idx][1] = 0.0;	// t
-	float v = data[idx][2] = 1.0;	// v
+	float v = data[idx][2] = 0.0;	// v
 	data[idx][3] = 0.0f;	// avg_period_v
 	data[idx][4] = 0.0f;	// avg_periods_v
 	float x = data[idx][5] = 0.0;	// x
@@ -85,13 +74,6 @@ extern "C" __global__ void continue_simulation()
 	    blockId * (blockDim.x * blockDim.y * blockDim.z) + (threadIdx.z * (blockDim.x * blockDim.y)) +
 	    (threadIdx.y * blockDim.x) + threadIdx.x;
 
-	float my_params[1];
-	int index = (int)idx / 64;
-	for (int i = 0; i < 1; i++) {
-		my_params[i] = parameters_values[i][index % parameters_values_lens[i]];
-		index = (int)index / parameters_values_lens[i];
-	}
-
 	int current_step = (int)data[idx][0];
 	float t = data[idx][1];
 	float v = data[idx][2];
@@ -105,19 +87,14 @@ extern "C" __global__ void continue_simulation()
 	float avg_period_x = data[idx][6];
 	float avg_periods_x = data[idx][7];
 
-	float rk4_v_diff_1 = v_diff(idx, t, v, x, my_params[0]);
-	float rk4_x_diff_1 = x_diff(idx, t, v, x, my_params[0]);
-	float
-	    rk4_v_diff_2 =
-	    v_diff(idx, t + dt / 2.0, v + dt * rk4_v_diff_1 / 2.0, x + dt * rk4_x_diff_1 / 2.0, my_params[0]);
-	float rk4_x_diff_2 =
-	    x_diff(idx, t + dt / 2.0, v + dt * rk4_v_diff_1 / 2.0, x + dt * rk4_x_diff_1 / 2.0, my_params[0]);
-	float rk4_v_diff_3 =
-	    v_diff(idx, t + dt / 2.0, v + dt * rk4_v_diff_2 / 2.0, x + dt * rk4_x_diff_2 / 2.0, my_params[0]);
-	float rk4_x_diff_3 =
-	    x_diff(idx, t + dt / 2.0, v + dt * rk4_v_diff_2 / 2.0, x + dt * rk4_x_diff_2 / 2.0, my_params[0]);
-	float rk4_v_diff_4 = v_diff(idx, t + dt, v + dt * rk4_v_diff_3, x + dt * rk4_x_diff_3, my_params[0]);
-	float rk4_x_diff_4 = x_diff(idx, t + dt, v + dt * rk4_v_diff_3, x + dt * rk4_x_diff_3, my_params[0]);
+	float rk4_v_diff_1 = v_diff(idx, t, v, x);
+	float rk4_x_diff_1 = x_diff(idx, t, v, x);
+	float rk4_v_diff_2 = v_diff(idx, t + dt / 2.0, v + dt * rk4_v_diff_1 / 2.0, x + dt * rk4_x_diff_1 / 2.0);
+	float rk4_x_diff_2 = x_diff(idx, t + dt / 2.0, v + dt * rk4_v_diff_1 / 2.0, x + dt * rk4_x_diff_1 / 2.0);
+	float rk4_v_diff_3 = v_diff(idx, t + dt / 2.0, v + dt * rk4_v_diff_2 / 2.0, x + dt * rk4_x_diff_2 / 2.0);
+	float rk4_x_diff_3 = x_diff(idx, t + dt / 2.0, v + dt * rk4_v_diff_2 / 2.0, x + dt * rk4_x_diff_2 / 2.0);
+	float rk4_v_diff_4 = v_diff(idx, t + dt, v + dt * rk4_v_diff_3, x + dt * rk4_x_diff_3);
+	float rk4_x_diff_4 = x_diff(idx, t + dt, v + dt * rk4_v_diff_3, x + dt * rk4_x_diff_3);
 	v_diff_value = (rk4_v_diff_1 + 2 * rk4_v_diff_2 + 2 * rk4_v_diff_3 + rk4_v_diff_4) / 6.0;
 	x_diff_value = (rk4_x_diff_1 + 2 * rk4_x_diff_2 + 2 * rk4_x_diff_3 + rk4_x_diff_4) / 6.0;
 
@@ -147,25 +124,21 @@ extern "C" __global__ void continue_simulation()
 		v = v_next;
 		x = x_next;
 
-		rk4_v_diff_1 = v_diff(idx, t, v, x, my_params[0]);
-		rk4_x_diff_1 = x_diff(idx, t, v, x, my_params[0]);
-		rk4_v_diff_2 =
-		    v_diff(idx, t + dt / 2.0, v + dt * rk4_v_diff_1 / 2.0, x + dt * rk4_x_diff_1 / 2.0, my_params[0]);
-		rk4_x_diff_2 =
-		    x_diff(idx, t + dt / 2.0, v + dt * rk4_v_diff_1 / 2.0, x + dt * rk4_x_diff_1 / 2.0, my_params[0]);
-		rk4_v_diff_3 =
-		    v_diff(idx, t + dt / 2.0, v + dt * rk4_v_diff_2 / 2.0, x + dt * rk4_x_diff_2 / 2.0, my_params[0]);
-		rk4_x_diff_3 =
-		    x_diff(idx, t + dt / 2.0, v + dt * rk4_v_diff_2 / 2.0, x + dt * rk4_x_diff_2 / 2.0, my_params[0]);
-		rk4_v_diff_4 = v_diff(idx, t + dt, v + dt * rk4_v_diff_3, x + dt * rk4_x_diff_3, my_params[0]);
-		rk4_x_diff_4 = x_diff(idx, t + dt, v + dt * rk4_v_diff_3, x + dt * rk4_x_diff_3, my_params[0]);
+		rk4_v_diff_1 = v_diff(idx, t, v, x);
+		rk4_x_diff_1 = x_diff(idx, t, v, x);
+		rk4_v_diff_2 = v_diff(idx, t + dt / 2.0, v + dt * rk4_v_diff_1 / 2.0, x + dt * rk4_x_diff_1 / 2.0);
+		rk4_x_diff_2 = x_diff(idx, t + dt / 2.0, v + dt * rk4_v_diff_1 / 2.0, x + dt * rk4_x_diff_1 / 2.0);
+		rk4_v_diff_3 = v_diff(idx, t + dt / 2.0, v + dt * rk4_v_diff_2 / 2.0, x + dt * rk4_x_diff_2 / 2.0);
+		rk4_x_diff_3 = x_diff(idx, t + dt / 2.0, v + dt * rk4_v_diff_2 / 2.0, x + dt * rk4_x_diff_2 / 2.0);
+		rk4_v_diff_4 = v_diff(idx, t + dt, v + dt * rk4_v_diff_3, x + dt * rk4_x_diff_3);
+		rk4_x_diff_4 = x_diff(idx, t + dt, v + dt * rk4_v_diff_3, x + dt * rk4_x_diff_3);
 		v_diff_value = (rk4_v_diff_1 + 2 * rk4_v_diff_2 + 2 * rk4_v_diff_3 + rk4_v_diff_4) / 6.0;
 		x_diff_value = (rk4_x_diff_1 + 2 * rk4_x_diff_2 + 2 * rk4_x_diff_3 + rk4_x_diff_4) / 6.0;
 
 	/**
     	 * Afterstep
     	 */
-		if (current_step % 10 == 0) {
+		if (current_step % 1000 == 0) {
 			afterstep(t, v, x);
 		}
 
