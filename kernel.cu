@@ -102,16 +102,12 @@ extern "C" __global__ void continue_simulation()
 	/**
          * Averaging
          */
-		// iterative mean https://stackoverflow.com/a/1934266/1185254
-		calc_avg(avg_period_v, v, current_step);
-		calc_avg(avg_period_x, x, current_step);
-
-		if (current_step % (steps_per_period - 1) == 0) {
-			calc_avg(avg_periods_v, avg_period_v, current_step / steps_per_period);
-			avg_period_v = 0.0f;
-			calc_avg(avg_periods_x, avg_period_x, current_step / steps_per_period);
-			avg_period_x = 0.0f;
-		}
+		float newMean_v = avg_period_v + (v - avg_period_v) / (current_step + 1.0);
+		avg_periods_v = avg_periods_v + (v - avg_period_v) * (v - newMean_v);
+		avg_period_v = newMean_v;
+		float newMean_x = avg_period_x + (x - avg_period_x) / (current_step + 1.0);
+		avg_periods_x = avg_periods_x + (x - avg_period_x) * (x - newMean_x);
+		avg_period_x = newMean_x;
 
 	/**
     	 * Integration

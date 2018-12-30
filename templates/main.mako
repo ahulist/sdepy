@@ -161,17 +161,11 @@ extern "C" __global__ void continue_simulation()
         /**
          * Averaging
          */
-        // iterative mean https://stackoverflow.com/a/1934266/1185254
         % for row in sde.row_iterator('type', 'dependent variable'):
-            calc_avg(avg_period_${row.Index}, ${row.Index}, current_step);
+            float newMean_${row.Index} = avg_period_${row.Index} + (${row.Index} - avg_period_${row.Index})/(current_step + 1.0);
+            avg_periods_${row.Index} = avg_periods_${row.Index} + (${row.Index} - avg_period_${row.Index})*(${row.Index} - newMean_${row.Index});
+            avg_period_${row.Index} = newMean_${row.Index};
         % endfor
-        
-        if(current_step % (steps_per_period-1) == 0){
-        	% for row in sde.row_iterator('type', 'dependent variable'):
-        		calc_avg(avg_periods_${row.Index}, avg_period_${row.Index}, current_step/steps_per_period);
-        		avg_period_${row.Index} = 0.0f;
-        	% endfor
-        }
         
         /**
     	 * Integration
