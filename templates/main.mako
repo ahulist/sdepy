@@ -39,7 +39,6 @@ __device__ ${sde.settings['simulation']['precision']} data [${sde.settings['simu
 
 __global__ void initkernel(int seed)
 {
-    //int idx = blockIdx.x * blockDim.x + threadIdx.x;
     int blockId = blockIdx.x + blockIdx.y * gridDim.x + gridDim.x * gridDim.y * blockIdx.z;
     int idx = blockId * (blockDim.x * blockDim.y * blockDim.z) + (threadIdx.z * (blockDim.x * blockDim.y)) + (threadIdx.y * blockDim.x) + threadIdx.x;
     
@@ -80,14 +79,8 @@ __global__ void initkernel(int seed)
 	}
 % endfor
 
-__device__ __inline__ void calc_avg(float &current_avg, float new_value, int current_step)
-{
-    current_avg += (new_value - current_avg) / (current_step % steps_per_period + 1);
-}
-
 extern "C" __global__ void prepare_simulation()
 {
-    //int idx =  blockIdx.x  *blockDim.x + threadIdx.x;
     int blockId = blockIdx.x + blockIdx.y * gridDim.x + gridDim.x * gridDim.y * blockIdx.z;
     int idx = blockId * (blockDim.x * blockDim.y * blockDim.z) + (threadIdx.z * (blockDim.x * blockDim.y)) + (threadIdx.y * blockDim.x) + threadIdx.x;
     
@@ -107,15 +100,15 @@ extern "C" __global__ void prepare_simulation()
         %>\
         \
         % if row.type == 'dependent variable':
-            data[idx][${free_index}] = 0.0f; // avg_period_${row.Index}
+            data[idx][${free_index}] = 0.0f; // mean_${row.Index}
             <%
-            sde.lookup['avg_period_' + str(row.Index)] = free_index
+            sde.lookup['mean_' + str(row.Index)] = free_index
             free_index += 1
             %>\
             \
-            data[idx][${free_index}] = 0.0f; // avg_periods_${row.Index}
+            data[idx][${free_index}] = 0.0f; // std_dev_${row.Index}
             <%
-            sde.lookup['avg_periods_' + str(row.Index)] = free_index
+            sde.lookup['std_dev_' + str(row.Index)] = free_index
             free_index += 1
             %>\
         % endif
@@ -129,7 +122,6 @@ __device__ void afterstep(${get_dep_indep_params_string(dep=True, indep=True, ty
 
 extern "C" __global__ void continue_simulation()
 {
-    //int idx =  blockIdx.x * blockDim.x + threadIdx.x;
     int blockId = blockIdx.x + blockIdx.y * gridDim.x + gridDim.x * gridDim.y * blockIdx.z;
     int idx = blockId * (blockDim.x * blockDim.y * blockDim.z) + (threadIdx.z * (blockDim.x * blockDim.y)) + (threadIdx.y * blockDim.x) + threadIdx.x;
     
@@ -141,17 +133,17 @@ extern "C" __global__ void continue_simulation()
             index = (int) index / parameters_values_lens[i];
         }
     % endif
-    
     int current_step = (int) data[idx][${sde.lookup['current step']}];
     % for row in sde.row_iterator('type', ['dependent variable', 'independent variable']):
         float ${row.Index} = data[idx][${sde.lookup[str(row.Index)]}];
         % if row.type == 'dependent variable':
             float ${row.Index}_next;
             float ${row.Index}_diff_value;
-            float avg_period_${row.Index} = data[idx][${sde.lookup['avg_period_'+str(row.Index)]}];
-            float avg_periods_${row.Index} = data[idx][${sde.lookup['avg_periods_'+str(row.Index)]}];
+            float mean_${row.Index} = data[idx][${sde.lookup['mean_'+str(row.Index)]}];
+            float std_dev_${row.Index} = data[idx][${sde.lookup['std_dev_'+str(row.Index)]}];
         % endif
     % endfor
+    float tmp_mean = 0;
     
     <%include file="${sde.settings['simulation']['integration_method']}.mako" args="what_u_want='integration_initialization',sde=sde, dependent_vars_count=dependent_vars_count, derivative_order=derivative_order, get_dep_indep_params_string=get_dep_indep_params_string"/>
     
@@ -159,18 +151,18 @@ extern "C" __global__ void continue_simulation()
 
     for (int i = 0; i < steps_per_kernel_call; i++) {
         /**
-         * Averaging
-         */
-        % for row in sde.row_iterator('type', 'dependent variable'):
-            float newMean_${row.Index} = avg_period_${row.Index} + (${row.Index} - avg_period_${row.Index})/(current_step + 1.0);
-            avg_periods_${row.Index} = avg_periods_${row.Index} + (${row.Index} - avg_period_${row.Index})*(${row.Index} - newMean_${row.Index});
-            avg_period_${row.Index} = newMean_${row.Index};
-        % endfor
-        
-        /**
     	 * Integration
     	 */
          <%include file="${sde.settings['simulation']['integration_method']}.mako" args="what_u_want='integration',sde=sde, dependent_vars_count=dependent_vars_count, derivative_order=derivative_order, get_dep_indep_params_string=get_dep_indep_params_string"/>
+        
+        /**
+         * Averaging
+         */
+        % for row in sde.row_iterator('type', 'dependent variable'):
+            tmp_mean = mean_${row.Index} + (${row.Index} - mean_${row.Index})/(current_step + 1.0);
+            std_dev_${row.Index} = std_dev_${row.Index} + (${row.Index} - mean_${row.Index})*(${row.Index} - tmp_mean);
+            mean_${row.Index} = tmp_mean;
+        % endfor
         
         /**
     	 * Afterstep
@@ -186,22 +178,21 @@ extern "C" __global__ void continue_simulation()
     % for row in sde.row_iterator('type', ['dependent variable', 'independent variable']):
         data[idx][${sde.lookup[str(row.Index)]}] = ${row.Index};
         % if row.type == 'dependent variable':
-            data[idx][${sde.lookup['avg_period_'+str(row.Index)]}] = avg_period_${row.Index};
-            data[idx][${sde.lookup['avg_periods_'+str(row.Index)]}] = avg_periods_${row.Index};
+            data[idx][${sde.lookup['mean_'+str(row.Index)]}] = mean_${row.Index};
+            data[idx][${sde.lookup['std_dev_'+str(row.Index)]}] = std_dev_${row.Index};
         % endif
     % endfor
 }
 
 extern "C" __global__ void end_simulation(float *summary)
 {
-    //int idx =  blockIdx.x * blockDim.x + threadIdx.x;
     int blockId = blockIdx.x + blockIdx.y * gridDim.x + gridDim.x * gridDim.y * blockIdx.z;
     int idx = blockId * (blockDim.x * blockDim.y * blockDim.z) + (threadIdx.z * (blockDim.x * blockDim.y)) + (threadIdx.y * blockDim.x) + threadIdx.x;
     
     <% len_ = len(list(sde.row_iterator('type', ['dependent variable']))) %>
     % for counter, row in enumerate(sde.row_iterator('type', ['dependent variable'])):
         summary[idx*${3*len_}+${counter*3+0}] = data[idx][${sde.lookup[str(row.Index)]}]; // ${row.Index}
-        summary[idx*${3*len_}+${counter*3+1}] = data[idx][${sde.lookup['avg_period_'+str(row.Index)]}]; // avg_period_${row.Index}
-        summary[idx*${3*len_}+${counter*3+2}] = data[idx][${sde.lookup['avg_periods_'+str(row.Index)]}]; // avg_periods_${row.Index}
+        summary[idx*${3*len_}+${counter*3+1}] = data[idx][${sde.lookup['mean_'+str(row.Index)]}]; // mean_${row.Index}
+        summary[idx*${3*len_}+${counter*3+2}] = data[idx][${sde.lookup['std_dev_'+str(row.Index)]}]; // std_dev_${row.Index}
     % endfor
 }
