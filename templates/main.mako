@@ -43,9 +43,13 @@ __global__ void initkernel(int seed)
     int idx = blockId * (blockDim.x * blockDim.y * blockDim.z) + (threadIdx.z * (blockDim.x * blockDim.y)) + (threadIdx.y * blockDim.x) + threadIdx.x;
     
     % if len(list(sde.row_iterator('type', 'noise'))) > 0:
+    if(idx < ${sde.settings['simulation']['number_of_threads']}){
         curandState_t* s = new curandState_t;
-        curand_init(seed*idx, idx, 0, s); // czy mnozenie przez idx jest potrzebne?
+        if (s != 0) {
+            curand_init(seed*idx, idx, 0, s); // czy mnozenie przez idx jest potrzebne? ta linia rzuca LogicError: cuMemcpyHtoD failed: an illegal memory access was encountered
+        }
         curand_states[idx] = s;
+    }
     % endif
 }
 
@@ -158,11 +162,13 @@ extern "C" __global__ void continue_simulation()
         /**
          * Averaging
          */
+        if(current_step >= transients){
         % for row in sde.row_iterator('type', 'dependent variable'):
-            tmp_mean = mean_${row.Index} + (${row.Index} - mean_${row.Index})/(current_step + 1.0);
+            tmp_mean = mean_${row.Index} + (${row.Index} - mean_${row.Index})/(current_step + 1.0 - transients);
             std_dev_${row.Index} = std_dev_${row.Index} + (${row.Index} - mean_${row.Index})*(${row.Index} - tmp_mean);
             mean_${row.Index} = tmp_mean;
         % endfor
+        }
         
         /**
     	 * Afterstep
@@ -184,7 +190,7 @@ extern "C" __global__ void continue_simulation()
     % endfor
 }
 
-extern "C" __global__ void end_simulation(float *summary)
+extern "C" __global__ void get_values(float *summary)
 {
     int blockId = blockIdx.x + blockIdx.y * gridDim.x + gridDim.x * gridDim.y * blockIdx.z;
     int idx = blockId * (blockDim.x * blockDim.y * blockDim.z) + (threadIdx.z * (blockDim.x * blockDim.y)) + (threadIdx.y * blockDim.x) + threadIdx.x;
